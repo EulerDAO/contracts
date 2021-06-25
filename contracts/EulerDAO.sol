@@ -13,6 +13,7 @@ contract EulerDAO is Initializable, OwnableUpgradeable, ERC721Upgradeable {
     bytes32[] public digests;
     address[] public solutions;
     uint256[] public scores;
+    uint256 public staking;
     mapping(bytes32 => uint256) timestamps;
     mapping(bytes32 => address) challengers;
 
@@ -25,12 +26,7 @@ contract EulerDAO is Initializable, OwnableUpgradeable, ERC721Upgradeable {
         __Context_init_unchained();
         __Ownable_init_unchained();
         __ERC165_init_unchained();
-        __ERC721_init_unchained("Euler Winner", "EULAR");
-    }
-
-    function register_problem(address problem) external onlyOwner {
-        problems.push(problem);
-        emit Problem(problems.length - 1, problem);
+        __ERC721_init_unchained("Euler Solution", "EULARS");
     }
 
     function lock_solution(uint256 target, bytes32 digest) public {
@@ -53,9 +49,11 @@ contract EulerDAO is Initializable, OwnableUpgradeable, ERC721Upgradeable {
     }
 
     function compete(uint256 id, uint256 score) external payable {
-        require(msg.value >= cost(score));
+        uint256 st = cost(score);
+        require(msg.value >= st);
         require(msg.sender == ownerOf(id));
         scores[id] = score;
+        staking += st;
         emit Compete(id, score);
     }
 
@@ -72,9 +70,20 @@ contract EulerDAO is Initializable, OwnableUpgradeable, ERC721Upgradeable {
         (bool ok, bytes memory o) = solutions[id].staticcall{gas: gas}(i);
         I(problems[targets[id]]).check(ok, i, o);
         scores[id] = 0;
-        uint256 money = cost(gas) - cost(0) / 2;
-        payable(msg.sender).transfer(money);
+        uint256 st = cost(gas);
+        uint256 tax = cost(0) / 2;
+        staking -= st;
+        payable(msg.sender).transfer(st - tax);
         emit Challenge(id, gas);
+    }
+
+    function register_problem(address problem) external onlyOwner {
+        problems.push(problem);
+        emit Problem(problems.length - 1, problem);
+    }
+
+    function claim_donation() external onlyOwner {
+        payable(msg.sender).transfer(address(this).balance - staking);
     }
 
     function addr(uint256 tgt, bytes32 h) external view returns (address) {
@@ -82,12 +91,14 @@ contract EulerDAO is Initializable, OwnableUpgradeable, ERC721Upgradeable {
     }
 
     function cost(uint256 gl) internal pure returns (uint256) {
-        return 40 * 1e9 * gl + 1e18;
+        return 100 * 1e9 * gl + 1e18;
     }
 
     function _baseURI() internal pure override returns (string memory) {
-        return "https://eulerdao.github.io/solutions/";
+        return "https://eulerdao.github.io/solutions/index?id=";
     }
+
+    receive() external payable {}
 }
 
 interface I {
