@@ -4,23 +4,22 @@ pragma solidity ^0.8.5;
 
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import "@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC721/extensions/ERC721EnumerableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/Create2Upgradeable.sol";
 
-contract EulerDAO is Initializable, OwnableUpgradeable, ERC721Upgradeable {
+contract EulerDAO is
+    Initializable,
+    OwnableUpgradeable,
+    ERC721EnumerableUpgradeable
+{
     address[] public problems;
-    uint256[] public targets;
-    bytes32[] public digests;
-    address[] public solutions;
-    uint256[] public scores;
-    uint256 public staking;
-    mapping(bytes32 => uint256) timestamps;
-    mapping(bytes32 => address) challengers;
+    mapping(uint256 => uint256) public targets;
+    mapping(uint256 => uint256) public scores;
+    mapping(uint256 => uint256) public timestamps;
+    mapping(uint256 => address) public challengers;
 
-    event Problem(uint256 indexed target, address indexed problem);
-    event Solution(uint256 indexed id, address indexed solution);
-    event Compete(uint256 indexed id, uint256 indexed score);
-    event Challenge(uint256 indexed id, uint256 indexed score);
+    event Compete(uint256 indexed id);
+    event Challenge(uint256 indexed id);
 
     function initialize() public initializer {
         __Context_init_unchained();
@@ -29,69 +28,68 @@ contract EulerDAO is Initializable, OwnableUpgradeable, ERC721Upgradeable {
         __ERC721_init_unchained("Euler Solution", "EULARS");
     }
 
-    function lock_solution(uint256 target, bytes32 digest) public {
-        _mint(msg.sender, targets.length);
-        targets.push(target);
-        digests.push(digest);
-        solutions.push(address(0));
-        scores.push(0);
+    function lock_solution(uint256 id, uint256 target) public {
+        _mint(msg.sender, id);
+        targets[id] = target;
     }
 
-    function submit_code(uint256 id, bytes memory code) external payable {
-        address sol = Create2Upgradeable.deploy(0, bytes32(targets[id]), code);
-        bytes32 digest;
-        assembly {
-            digest := extcodehash(sol)
-        }
-        require(digest == digests[id]);
-        solutions[id] = sol;
-        emit Solution(id, sol);
+    function submit_code(bytes memory code) external {
+        Create2Upgradeable.deploy(0, 0, code);
     }
 
     function compete(uint256 id, uint256 score) external payable {
-        uint256 st = cost(score);
-        require(msg.value >= st);
         require(msg.sender == ownerOf(id));
+        require(scores[id] == 0);
+        uint256 st = cost_gas(score) + cost_base();
+        require(msg.value >= st);
         scores[id] = score;
-        staking += st;
-        emit Compete(id, score);
+        emit Compete(id);
     }
 
-    function lock_challenge(bytes32 digest) public {
-        require(timestamps[digest] + 10 minutes < block.timestamp);
-        timestamps[digest] = block.timestamp;
-        challengers[digest] = msg.sender;
+    function lock_challenge(uint256 id) public payable {
+        uint256 duration = block.timestamp - timestamps[id];
+        duration = duration >> 3;
+        if (duration > 128) {
+            duration = 128;
+        }
+        uint256 fee = 0xffffffffffffffffffffffffffffffff / (1 << duration);
+        require(msg.value >= fee);
+        timestamps[id] = block.timestamp;
+        challengers[id] = msg.sender;
     }
 
     function challenge(uint256 id, bytes calldata i) external payable {
-        require(challengers[keccak256(i)] == msg.sender);
-        uint256 gas = scores[id];
-        require(gas > 0);
-        (bool ok, bytes memory o) = solutions[id].staticcall{gas: gas}(i);
+        require(challengers[id] == msg.sender);
+        uint256 score = scores[id];
+        require(score > 0);
+        address sol = Create2Upgradeable.computeAddress(0, bytes32(id));
+        (bool ok, bytes memory o) = sol.staticcall{gas: score}(i);
         I(problems[targets[id]]).check(ok, i, o);
-        scores[id] = 0;
-        uint256 st = cost(gas);
-        uint256 tax = cost(0) / 2;
-        staking -= st;
-        payable(msg.sender).transfer(st - tax);
-        emit Challenge(id, gas);
+        delete scores[id];
+        payable(msg.sender).transfer(cost_gas(score) + cost_base() / 2);
+        emit Challenge(id);
+    }
+
+    function revoke(uint256 id) external payable {
+        uint256 score = scores[id];
+        require(challengers[id] == msg.sender);
+        require(msg.sender == ownerOf(id));
+        require(score > 0);
+        delete scores[id];
+        payable(msg.sender).transfer(cost_gas(score) + cost_base() / 2);
+        emit Challenge(id);
     }
 
     function register_problem(address problem) external onlyOwner {
         problems.push(problem);
-        emit Problem(problems.length - 1, problem);
     }
 
-    function claim_donation() external onlyOwner {
-        payable(msg.sender).transfer(address(this).balance - staking);
+    function cost_gas(uint256 gl) internal pure returns (uint256) {
+        return 100 * 1e9 * gl;
     }
 
-    function addr(uint256 tgt, bytes32 h) external view returns (address) {
-        return Create2Upgradeable.computeAddress(bytes32(tgt), h);
-    }
-
-    function cost(uint256 gl) internal pure returns (uint256) {
-        return 100 * 1e9 * gl + 1e18;
+    function cost_base() internal pure returns (uint256) {
+        return 1e18;
     }
 
     function _baseURI() internal pure override returns (string memory) {
