@@ -38,10 +38,10 @@ contract EulerDAO is
     }
 
     function compete(uint256 id, uint256 score) external payable {
-        require(msg.sender == ownerOf(id));
-        require(scores[id] == 0);
+        require(msg.sender == ownerOf(id), "unauthorized");
+        require(scores[id] == 0, "competed");
         uint256 st = cost_gas(score) + cost_base();
-        require(msg.value >= st);
+        require(msg.value >= st, "insufficient");
         scores[id] = score;
         emit Compete(id);
     }
@@ -53,15 +53,15 @@ contract EulerDAO is
             duration = 128;
         }
         uint256 fee = 0xffffffffffffffffffffffffffffffff / (1 << duration);
-        require(msg.value >= fee);
+        require(msg.value >= fee, "insufficient");
         timestamps[id] = block.timestamp;
         challengers[id] = msg.sender;
     }
 
     function challenge(uint256 id, bytes calldata i) external payable {
-        require(challengers[id] == msg.sender);
+        require(challengers[id] == msg.sender, "unlocked");
         uint256 score = scores[id];
-        require(score > 0);
+        require(score > 0, "!competed");
         address sol = Create2Upgradeable.computeAddress(0, bytes32(id));
         (bool ok, bytes memory o) = sol.staticcall{gas: score}(i);
         I(problems[targets[id]]).check(ok, i, o);
@@ -72,9 +72,9 @@ contract EulerDAO is
 
     function revoke(uint256 id) external payable {
         uint256 score = scores[id];
-        require(challengers[id] == msg.sender);
-        require(msg.sender == ownerOf(id));
-        require(score > 0);
+        require(challengers[id] == msg.sender, "unlocked");
+        require(msg.sender == ownerOf(id), "unauthorized");
+        require(score > 0, "!competed");
         delete scores[id];
         payable(msg.sender).transfer(cost_gas(score) + cost_base() / 2);
         emit Challenge(id);
@@ -93,7 +93,7 @@ contract EulerDAO is
     }
 
     function _baseURI() internal pure override returns (string memory) {
-        return "https://eulerdao.github.io/solutions/index?id=";
+        return "https://eulerdao.github.io/solution?decimal=";
     }
 
     receive() external payable {}
