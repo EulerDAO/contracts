@@ -33,6 +33,12 @@ contract EulerDAO is
         targets[id] = target;
     }
 
+    function change_target(uint256 id, uint256 target) public {
+        require(ownerOf(id) == msg.sender, "unauthorized");
+        require(scores[id] == 0, "competed");
+        targets[id] = target;
+    }
+
     function submit_code(bytes memory code) external {
         Create2Upgradeable.deploy(0, 0, code);
     }
