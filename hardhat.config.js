@@ -1,5 +1,6 @@
 require("@nomiclabs/hardhat-waffle");
 require("@openzeppelin/hardhat-upgrades");
+require("@nomiclabs/hardhat-etherscan");
 
 task("accounts", "Prints the list of accounts", async () => {
     const accounts = await ethers.getSigners();
@@ -8,6 +9,19 @@ task("accounts", "Prints the list of accounts", async () => {
         console.log(account.address);
     }
 });
+
+task("deploy", "deploy EulerDAO", async () => {
+    const EulerDAO = await ethers.getContractFactory("EulerDAO");
+    const ed = await upgrades.deployProxy(EulerDAO, []);
+    console.log(`${ed.address}`)
+});
+
+task("reg", "register problem", async (args) => {
+    const EulerDAO = await ethers.getContractFactory("EulerDAO");
+    const ed = await EulerDAO.attach('0xC3a65484e3D59689B318fB23c210a079873CFfbB')
+    console.log(`${await ed.totalSupply()}`);
+    await ed.register_problem(args.addr);
+}).addPositionalParam('addr', 'problem address');
 
 const config = {
     solidity: "0.8.5",
