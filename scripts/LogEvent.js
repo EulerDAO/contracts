@@ -1,7 +1,8 @@
 const fs = require('fs');
 const root_dir = '.cache';
-const timestamp_dir = '.cache/solutions-timestamp';
-const score_dir = '.cache/solutions-score';
+const solution_dir = '.cache/solutions';
+const timestamp_dir = '.cache/solutions/timestamp';
+const score_dir = '.cache/solutions/score';
 async function main() {
     const EulerDAO = await ethers.getContractFactory("EulerDAO");
     const ed = await EulerDAO.attach('0xC3a65484e3D59689B318fB23c210a079873CFfbB');
@@ -32,7 +33,16 @@ async function main() {
     for (const e of  [...ex, ...ey]) {
         score_pool.push(produce_solution_score(ed, e.args.id));
     }
-    await Promise.all(score_pool);
+
+    active_solution = {}
+    await Promise.all(score_pool).then((values) => values.forEach((v) => {
+        if (ethers.BigNumber.from(v.score).gt(0)) {
+            id = v.id;
+            delete v['id'];
+            active_solution[id] = v;
+        }
+    }));
+    fs.writeFileSync(`${solution_dir}/active_solution.json`, JSON.stringify(active_solution));
 }
 
 async function produce_solution_score(ed, id) {
@@ -42,11 +52,16 @@ async function produce_solution_score(ed, id) {
     content.score = (await ed.scores(id)).toHexString();
     content.target = (await ed.targets(id)).toHexString();
     fs.writeFileSync(`${score_dir}/${filename}.json`, JSON.stringify(content));
+    content.id = filename;
+    return content;
 }
 
 function prepare_dir() {
     if (!fs.existsSync(root_dir)) {
         fs.mkdirSync(root_dir);
+    }
+    if (!fs.existsSync(solution_dir)) {
+        fs.mkdirSync(solution_dir);
     }
     if (!fs.existsSync(timestamp_dir)) {
         fs.mkdirSync(timestamp_dir);
